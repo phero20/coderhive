@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -36,6 +36,15 @@ const ResellerDashboard = () => {
   const [quantity, setQuantity] = useState("");
   const [materialsOpen, setMaterialsOpen] = useState(false);
   const [selectedMaterials, setSelectedMaterials] = useState([]);
+  const [user, setUser] = useState(null);
+  const [address, setAddress] = useState("");
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("user");
+      if (stored) setUser(JSON.parse(stored));
+    } catch {}
+  }, []);
 
   const projectTypes = [
     { value: "house", label: "House Construction" },
@@ -133,8 +142,8 @@ const ResellerDashboard = () => {
                 Reseller Portal
               </h1>
             </div>
-            <div className="text-sm text-muted-foreground">
-              Welcome back, Reseller
+            <div className="text-sm text-muted-foreground"> 
+              Welcome back, {user?.name || "Reseller"}
             </div>
           </div>
         </div>
@@ -182,6 +191,15 @@ const ResellerDashboard = () => {
                     placeholder="e.g., 1000 sq ft, 500 meters"
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label htmlFor="address">Address</Label>
+                  <Input
+                    id="address"
+                    placeholder="Enter site address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
                   />
                 </div>
               </div>

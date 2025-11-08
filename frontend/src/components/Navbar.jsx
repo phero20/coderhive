@@ -57,16 +57,7 @@ export default function Navbar() {
           )
         ) : (
           <>
-            <li>
-              <Link to="/resellers" className="hover:text-blue-700">
-                Resellers Portal
-              </Link>
-            </li>
-            <li>
-              <Link to="/manufacturers" className="hover:text-blue-700">
-                Manufacturer Portal
-              </Link>
-            </li>
+           
           </>
         )}
         <li>
