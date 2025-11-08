@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
+import axios from "axios";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { Badge } from "../components/ui/badge";
 import {
   Select,
   SelectTrigger,
@@ -96,36 +98,41 @@ const ResellerDashboard = () => {
     },
   ];
 
-  const mockQuotations = [
-    {
-      manufacturer: "UltraTech Cement",
-      totalCost: "₹12,45,000",
-      deliveryDays: "5-7 days",
-      route: "Mumbai → Pune (Optimized)",
-      distance: "148 km",
-    },
-    {
-      manufacturer: "ACC Limited",
-      totalCost: "₹12,98,000",
-      deliveryDays: "7-10 days",
-      route: "Thane → Pune (Standard)",
-      distance: "165 km",
-    },
-    {
-      manufacturer: "Ambuja Cement",
-      totalCost: "₹11,95,000",
-      deliveryDays: "10-12 days",
-      route: "Gujarat → Pune (Economy)",
-      distance: "612 km",
-    },
-  ];
+  const [candidates, setCandidates] = useState([]);
+  const [summary, setSummary] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleGenerateQuotation = () => {
-    toast({
-      title: "Quotation Generated",
-      description: "Smart quotations from 3 manufacturers ready for review",
-      variant: "success",
-    });
+  const handleGenerateQuotation = async () => {
+    try {
+      setLoading(true);
+      setSummary("");
+      setCandidates([]);
+      const payload = {
+        project_type: projectType || "",
+        address: address || "",
+        materials: selectedMaterials,
+        quantity: quantity || "",
+      };
+      const res = await axios.post(
+        "http://localhost:8000/v1/smart-quote/prepare-simple",
+        payload
+      );
+      setSummary(res.data.summary || "");
+      setCandidates(res.data.candidates || []);
+      toast({
+        title: "Quotation Generated",
+        description: "Smart quotations are ready for review",
+        variant: "success",
+      });
+    } catch (e) {
+      toast({
+        title: "Failed to generate",
+        description: "Please ensure the backend is running on :8000",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -283,18 +290,31 @@ const ResellerDashboard = () => {
               <Button
                 onClick={handleGenerateQuotation}
                 className="w-full md:w-auto"
+                disabled={loading}
               >
                 <Send className="mr-2 h-4 w-4" />
-                Generate AI Quotation
+                {loading ? "Generating..." : "Generate AI Quotation"}
               </Button>
             </Card>
 
             {/* Quotations Results */}
             <div className="grid gap-4">
-              <h3 className="text-lg font-semibold text-foreground">
-                Available Quotations
-              </h3>
-              {mockQuotations.map((quote, index) => (
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-foreground">
+                  Available Quotations
+                </h3>
+                {summary ? (
+                  <Badge>AI Verified</Badge>
+                ) : (
+                  <Badge variant="secondary"></Badge>
+                )}
+              </div>
+              {summary && !summary.startsWith("SmartQuotation (fallback)") && (
+                <Card className="p-4">
+                  <pre className="whitespace-pre-wrap text-sm text-muted-foreground">{summary}</pre>
+                </Card>
+              )}
+              {candidates.map((c, index) => (
                 <Card
                   key={index}
                   className="p-6 hover:shadow-lg transition-all"
@@ -302,28 +322,33 @@ const ResellerDashboard = () => {
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex-1">
                       <h4 className="text-lg font-semibold text-card-foreground">
-                        {quote.manufacturer}
+                        {c.vendor_name}
                       </h4>
                       <div className="flex flex-wrap gap-4 mt-2 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <IndianRupee className="h-4 w-4" />
-                          {quote.totalCost}
+                          {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(c.landed_cost)}
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="h-4 w-4" />
-                          {quote.deliveryDays}
+                          {`${Math.max(1, Math.floor((c.eta_minutes || 0) / (60 * 24)))} days`}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground mt-2">
-                        Route: {quote.route} ({quote.distance})
+                        Distance: {c.distance_km} km
                       </p>
                     </div>
-                    <Button variant={index === 2 ? "default" : "outline"}>
-                      {index === 2 ? "Best Deal" : "Select"}
+                    <Button variant={index === 0 ? "default" : "outline"}>
+                      {index === 0 ? "Best Deal" : "Select"}
                     </Button>
                   </div>
                 </Card>
               ))}
+              {!loading && candidates.length === 0 && (
+                <Card className="p-4">
+                  <div className="text-sm text-muted-foreground">Click "Generate AI Quotation" to fetch live quotations.</div>
+                </Card>
+              )}
             </div>
           </TabsContent>
 
