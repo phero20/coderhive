@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #333; }
+        h2 { color: #666; margin-top: 0; }
+        pre {
+            background: #f8f8f8;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border-left: 3px solid #4CAF50;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #45a049; }
+        .error { color: #f44336; }
+        .success { color: #4CAF50; }
+        .warning { color: #ff9800; }
+        .info { color: #2196F3; }
+    </style>
+</head>
+<body>
+    <h1>🔐 Authentication Debug Tool</h1>
+    
+    <div class="card">
+        <h2>localStorage Contents</h2>
+        <button onclick="checkLocalStorage()">Check localStorage</button>
+        <button onclick="clearLocalStorage()">Clear All</button>
+        <pre id="localStorage-output">Click "Check localStorage" to view</pre>
+    </div>
+
+    <div class="card">
+        <h2>User Data</h2>
+        <pre id="user-output">Loading...</pre>
+    </div>
+
+    <div class="card">
+        <h2>Session Data</h2>
+        <pre id="session-output">Loading...</pre>
+    </div>
+
+    <div class="card">
+        <h2>Session Validity</h2>
+        <pre id="validity-output">Loading...</pre>
+    </div>
+
+    <div class="card">
+        <h2>Quick Actions</h2>
+        <button onclick="simulateLogin()">Simulate Login (Reseller)</button>
+        <button onclick="simulateManufacturerLogin()">Simulate Login (Manufacturer)</button>
+        <button onclick="testNavigation()">Test Navigation</button>
+    </div>
+
+    <script>
+        function checkLocalStorage() {
+            const output = document.getElementById('localStorage-output');
+            const keys = Object.keys(localStorage);
+            
+            if (keys.length === 0) {
+                output.innerHTML = '<span class="warning">⚠️ localStorage is empty</span>';
+                return;
+            }
+
+            let html = '<span class="success">✅ Found ' + keys.length + ' items:</span>\n\n';
+            keys.forEach(key => {
+                const value = localStorage.getItem(key);
+                html += `<strong>${key}:</strong>\n`;
+                try {
+                    const parsed = JSON.parse(value);
+                    html += JSON.stringify(parsed, null, 2) + '\n\n';
+                } catch {
+                    html += value + '\n\n';
+                }
+            });
+            output.innerHTML = html;
+            
+            // Also update other sections
+            checkUser();
+            checkSession();
+            checkValidity();
+        }
+
+        function checkUser() {
+            const output = document.getElementById('user-output');
+            const user = localStorage.getItem('user');
+            
+            if (!user) {
+                output.innerHTML = '<span class="error">❌ No user data found</span>';
+                return;
+            }
+
+            try {
+                const userData = JSON.parse(user);
+                output.innerHTML = `<span class="success">✅ User found:</span>\n\n` +
+                    `<strong>Name:</strong> ${userData.name || 'N/A'}\n` +
+                    `<strong>Email:</strong> ${userData.email}\n` +
+                    `<strong>Role:</strong> ${userData.role}\n` +
+                    `<strong>ID:</strong> ${userData.id}\n\n` +
+                    `<strong>Full Data:</strong>\n` +
+                    JSON.stringify(userData, null, 2);
+            } catch (e) {
+                output.innerHTML = '<span class="error">❌ Error parsing user data: ' + e.message + '</span>';
+            }
+        }
+
+        function checkSession() {
+            const output = document.getElementById('session-output');
+            const supabaseSession = localStorage.getItem('supabase.auth.token');
+            const ourSession = localStorage.getItem('supabase_session');
+            
+            let html = '';
+
+            if (supabaseSession) {
+                try {
+                    const session = JSON.parse(supabaseSession);
+                    html += '<span class="success">✅ Supabase session found:</span>\n\n';
+                    html += `<strong>Access Token:</strong> ${session.access_token?.substring(0, 50)}...\n`;
+                    html += `<strong>Expires At:</strong> ${new Date(session.expires_at * 1000).toLocaleString()}\n`;
+                    html += `<strong>User Email:</strong> ${session.user?.email}\n\n`;
+                } catch (e) {
+                    html += '<span class="error">❌ Error parsing Supabase session</span>\n\n';
+                }
+            } else {
+                html += '<span class="error">❌ No Supabase session found</span>\n\n';
+            }
+
+            if (ourSession) {
+                try {
+                    const session = JSON.parse(ourSession);
+                    html += '<span class="success">✅ Our session copy found</span>\n';
+                    html += `<strong>Expires At:</strong> ${new Date(session.expires_at * 1000).toLocaleString()}\n`;
+                } catch (e) {
+                    html += '<span class="error">❌ Error parsing our session</span>\n';
+                }
+            } else {
+                html += '<span class="warning">⚠️ No session copy found</span>\n';
+            }
+
+            output.innerHTML = html || '<span class="error">❌ No session data found</span>';
+        }
+
+        function checkValidity() {
+            const output = document.getElementById('validity-output');
+            const user = localStorage.getItem('user');
+            const supabaseSession = localStorage.getItem('supabase.auth.token');
+            
+            let html = '';
+
+            if (!user) {
+                html += '<span class="error">❌ No user data - Session INVALID</span>\n';
+            } else {
+                html += '<span class="success">✅ User data exists</span>\n';
+            }
+
+            if (supabaseSession) {
+                try {
+                    const session = JSON.parse(supabaseSession);
+                    const expiryTime = new Date(session.expires_at * 1000);
+                    const now = new Date();
+                    const timeRemaining = expiryTime - now;
+                    const minutesRemaining = Math.floor(timeRemaining / 1000 / 60);
+
+                    if (timeRemaining > 0) {
+                        html += `<span class="success">✅ Session valid for ${minutesRemaining} more minutes</span>\n`;
+                        html += `<strong>Expires:</strong> ${expiryTime.toLocaleString()}\n`;
+                    } else {
+                        html += '<span class="error">❌ Session EXPIRED</span>\n';
+                        html += `<strong>Expired:</strong> ${expiryTime.toLocaleString()}\n`;
+                    }
+                } catch (e) {
+                    html += '<span class="error">❌ Error checking session validity</span>\n';
+                }
+            } else {
+                html += '<span class="error">❌ No session to validate</span>\n';
+            }
+
+            output.innerHTML = html;
+        }
+
+        function clearLocalStorage() {
+            if (confirm('Clear all localStorage data?')) {
+                localStorage.clear();
+                alert('✅ localStorage cleared!');
+                checkLocalStorage();
+            }
+        }
+
+        function simulateLogin() {
+            const now = Math.floor(Date.now() / 1000);
+            const expiresAt = now + (60 * 60); // 1 hour from now
+
+            const user = {
+                id: 1,
+                name: "Test Reseller",
+                email: "test@reseller.com",
+                role: "reseller",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            const session = {
+                access_token: "fake_access_token_" + Math.random(),
+                refresh_token: "fake_refresh_token_" + Math.random(),
+                expires_at: expiresAt,
+                user: {
+                    email: user.email,
+                    id: "fake_supabase_id"
+                }
+            };
+
+            localStorage.setItem('user', JSON.stringify(user));
+            localStorage.setItem('supabase.auth.token', JSON.stringify(session));
+            localStorage.setItem('supabase_session', JSON.stringify(session));
+            localStorage.setItem('access_token', session.access_token);
+
+            alert('✅ Simulated reseller login!');
+            checkLocalStorage();
+        }
+
+        function simulateManufacturerLogin() {
+            const now = Math.floor(Date.now() / 1000);
+            const expiresAt = now + (60 * 60);
+
+            const user = {
+                id: 2,
+                name: "Test Manufacturer",
+                email: "test@manufacturer.com",
+                role: "manufacturer",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+
+            const session = {
+                access_token: "fake_access_token_" + Math.random(),
+                refresh_token: "fake_refresh_token_" + Math.random(),
+                expires_at: expiresAt,
+                user: {
+                    email: user.email,
+                    id: "fake_supabase_id"
+                }
+            };
+
+            localStorage.setItem('user', JSON.stringify(user));
+            localStorage.setItem('supabase.auth.token', JSON.stringify(session));
+            localStorage.setItem('supabase_session', JSON.stringify(session));
+            localStorage.setItem('access_token', session.access_token);
+
+            alert('✅ Simulated manufacturer login!');
+            checkLocalStorage();
+        }
+
+        function testNavigation() {
+            const user = localStorage.getItem('user');
+            if (!user) {
+                alert('❌ No user logged in. Simulate a login first.');
+                return;
+            }
+
+            const userData = JSON.parse(user);
+            const targetPage = userData.role === 'reseller' ? '/resellers' : '/manufacturers';
+            
+            if (confirm(`Navigate to ${targetPage}?`)) {
+                window.location.href = targetPage;
+            }
+        }
+
+        // Auto-run on load
+        window.onload = function() {
+            checkLocalStorage();
+        };
+    </script>
+</body>
+</html>

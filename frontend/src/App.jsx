@@ -8,6 +8,7 @@ import Footer from "./components/Footer";
 import Auth from "./pages/Auth";
 import Resellers from "./pages/Resellers";
 import Manufacturers from "./pages/Manufacturers";
+import ProtectedRoute from "./components/ProtectedRoute";
 import { Toaster } from "./components/ui/toaster";
 
 export default function App() {
@@ -17,8 +18,22 @@ export default function App() {
         <Navbar />
         <Routes>
           <Route path="/auth" element={<Auth />} />
-          <Route path="/resellers" element={<Resellers />} />
-          <Route path="/manufacturers" element={<Manufacturers />} />
+          <Route 
+            path="/resellers" 
+            element={
+              <ProtectedRoute requiredRole="reseller">
+                <Resellers />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/manufacturers" 
+            element={
+              <ProtectedRoute requiredRole="manufacturer">
+                <Manufacturers />
+              </ProtectedRoute>
+            } 
+          />
           <Route
             path="/"
             element={

@@ -12,70 +12,205 @@ import {
   Clock
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { getStoredUser } from "@/lib/auth";
 
 const ManufacturerDashboard = () => {
   const navigate = useNavigate();
 
-  const mockEnquiries = [
-    { 
-      id: "ENQ001",
-      reseller: "BuildPro Construction", 
-      project: "Residential Complex",
-      materials: "Cement, Steel, Bricks",
-      quantity: "Large scale",
-      status: "pending",
-      date: "2 hours ago"
-    },
-    { 
-      id: "ENQ002",
-      reseller: "Metro Builders", 
-      project: "Bridge Construction",
-      materials: "Cement, Sand",
-      quantity: "Medium scale",
-      status: "pending",
-      date: "5 hours ago"
-    },
-    { 
-      id: "ENQ003",
-      reseller: "Urban Developers", 
-      project: "Road Construction",
-      materials: "Sand, Aggregates",
-      quantity: "Large scale",
-      status: "accepted",
-      date: "1 day ago"
-    }
-  ];
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [manufacturerId, setManufacturerId] = useState(null);
+  const [pendingEnquiriesCount, setPendingEnquiriesCount] = useState(0);
+  const [activeOrdersCount, setActiveOrdersCount] = useState(0);
+  const [revenueMonth, setRevenueMonth] = useState("₹0");
+  const [totalClients, setTotalClients] = useState(0);
 
-  const mockInventory = [
-    { 
-      product: "Cement (50kg bags)", 
-      stock: 12500,
-      demand: "high",
-      recommendation: "Increase price by 3-5%",
-      action: "restock"
-    },
-    { 
-      product: "Steel Bars (TMT)", 
-      stock: 3200,
-      demand: "medium",
-      recommendation: "Maintain current price",
-      action: "monitor"
-    },
-    { 
-      product: "Construction Sand", 
-      stock: 8900,
-      demand: "low",
-      recommendation: "Reduce price by 5-8%",
-      action: "clearance"
-    }
-  ];
+  const [enquiries, setEnquiries] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [topClients, setTopClients] = useState([]);
 
-  const mockClients = [
-    { name: "BuildPro Construction", orders: 45, revenue: "₹45.2L", priority: "high" },
-    { name: "Metro Builders", orders: 38, revenue: "₹38.5L", priority: "high" },
-    { name: "Urban Developers", orders: 29, revenue: "₹29.8L", priority: "medium" },
-    { name: "Skyline Projects", orders: 22, revenue: "₹22.1L", priority: "medium" }
-  ];
+  useEffect(() => {
+    const fetchData = async () => {
+      // ProtectedRoute already verified authentication and role
+      const currentUser = getStoredUser();
+      if (!currentUser) {
+        console.error('[Manufacturers] No user found after ProtectedRoute check');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('[Manufacturers] User authenticated:', currentUser.email, 'Role:', currentUser.role);
+      setUser(currentUser);
+      
+      console.log('[Manufacturers] Loading manufacturer data for user:', currentUser.email);
+      await fetchAll(currentUser);
+      setLoading(false);
+    };
+
+    const fetchAll = async (currentUser) => {
+      try {
+        console.log('[Manufacturers] Fetching manufacturer for user ID:', currentUser.id);
+        
+        // 1) Find manufacturer owned by current user
+        const { data: manuList, error: manuErr } = await supabase
+          .from("manufacturers")
+          .select("id, total_clients")
+          .eq("owner_user_id", currentUser.id);
+        
+        if (manuErr) {
+          console.error('[Manufacturers] Error fetching manufacturer:', manuErr);
+          // Continue anyway - show empty dashboard
+          return;
+        }
+        
+        console.log('[Manufacturers] Found manufacturers:', manuList?.length || 0);
+        
+        const manuId = manuList?.[0]?.id || null;
+        if (!manuId) {
+          console.warn('[Manufacturers] No manufacturer found, creating default...');
+          // Create a default manufacturer for this user if none exists
+          const { data: newManu, error: createErr } = await supabase
+            .from("manufacturers")
+            .insert([{
+              name: `${currentUser.name}'s Manufacturing Co`,
+              email: currentUser.email,
+              phone: '+91-XXX-XXX-XXXX',
+              address: 'India',
+              website: '',
+              product_combination: 'General Manufacturing',
+              price_combination: 'Competitive pricing',
+              revenue: 0,
+              total_clients: 0,
+              owner_user_id: currentUser.id
+            }])
+            .select()
+            .single();
+            
+          if (createErr) {
+            console.error('[Manufacturers] Error creating manufacturer:', createErr);
+            // Show empty dashboard anyway
+            return;
+          }
+          
+          console.log('[Manufacturers] Created new manufacturer:', newManu.id);
+          setManufacturerId(newManu.id);
+          setTotalClients(0);
+          return; // No existing data to fetch
+        }
+        
+        console.log('[Manufacturers] Using manufacturer ID:', manuId);
+        setManufacturerId(manuId);
+        setTotalClients(manuList[0]?.total_clients || 0);
+
+        // 2) Revenue (latest month)
+        const { data: revRows, error: revErr } = await supabase
+          .from("manufacturer_revenue_by_month")
+          .select("month, amount")
+          .eq("manufacturer_id", manuId)
+          .order("month", { ascending: false })
+          .limit(1);
+        
+        if (revErr) {
+          console.error('[Manufacturers] Error fetching revenue:', revErr);
+        }
+        
+        const amount = revRows?.[0]?.amount || 0;
+        setRevenueMonth(new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount));
+
+      // 3) Pending enquiries count and list
+      const { data: enqCountRows } = await supabase
+        .from("manufacturer_enquiries")
+        .select("id", { count: "exact", head: true })
+        .eq("manufacturer_id", manuId)
+        .eq("status", "pending");
+      setPendingEnquiriesCount(enqCountRows?.length ?? 0); // head:true returns no rows; fallback below
+      const { count: enqCount } = await supabase
+        .from("manufacturer_enquiries")
+        .select("*, id", { count: "exact" })
+        .eq("manufacturer_id", manuId)
+        .eq("status", "pending")
+        .limit(1);
+      if (typeof enqCount === "number") setPendingEnquiriesCount(enqCount);
+
+      const { data: enqList } = await supabase
+        .from("manufacturer_enquiries")
+        .select("id, customer_name, subject, message, status, created_at")
+        .eq("manufacturer_id", manuId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      setEnquiries(
+        (enqList || []).map((e) => ({
+          id: e.id,
+          reseller: e.customer_name || "Customer",
+          project: e.subject || "—",
+          materials: e.message?.slice(0, 80) || "—",
+          quantity: "—",
+          status: e.status,
+          date: new Date(e.created_at).toLocaleString(),
+        }))
+      );
+
+      // 4) Active orders count
+      const activeStatuses = ["pending", "confirmed", "shipped"];
+      const { count: ordCount } = await supabase
+        .from("manufacturer_orders")
+        .select("id", { count: "exact" })
+        .eq("manufacturer_id", manuId)
+        .in("status", activeStatuses);
+      setActiveOrdersCount(ordCount || 0);
+
+      // 5) Inventory list
+      const { data: inv } = await supabase
+        .from("manufacturer_inventory")
+        .select("product_name, quantity, location")
+        .eq("manufacturer_id", manuId)
+        .order("product_name", { ascending: true })
+        .limit(20);
+      setInventory(
+        (inv || []).map((x) => ({
+          product: x.product_name || "—",
+          stock: x.quantity || 0,
+          demand: "—",
+          recommendation: "",
+          action: "monitor",
+        }))
+      );
+
+      // 6) Top customers
+      const { data: tops } = await supabase
+        .from("manufacturer_top_customers")
+        .select("customer_name, total_orders, total_revenue")
+        .eq("manufacturer_id", manuId)
+        .order("total_revenue", { ascending: false })
+        .limit(10);
+      setTopClients(
+        (tops || []).map((t) => ({
+          name: t.customer_name,
+          orders: t.total_orders,
+          revenue: new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 1 }).format(t.total_revenue || 0),
+          priority: (t.total_revenue || 0) > 1000000 ? "high" : "medium",
+        }))
+      );
+      } catch (error) {
+        console.error('[Manufacturers] Unexpected error in fetchAll:', error);
+      }
+    };
+    
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading manufacturer dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -89,7 +224,9 @@ const ManufacturerDashboard = () => {
               </Button>
               <h1 className="text-2xl font-bold text-foreground">Manufacturer Portal</h1>
             </div>
-            <div className="text-sm text-muted-foreground">Welcome back, Manufacturer</div>
+            <div className="text-sm text-muted-foreground"> 
+              Welcome back, {user?.name || "Manufacturer"}
+            </div>
           </div>
         </div>
       </div>
@@ -101,7 +238,7 @@ const ManufacturerDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Pending Enquiries</p>
-                <p className="text-3xl font-bold text-card-foreground">12</p>
+                <p className="text-3xl font-bold text-card-foreground">{pendingEnquiriesCount}</p>
               </div>
               <Clock className="h-8 w-8 text-primary" />
             </div>
@@ -110,7 +247,7 @@ const ManufacturerDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Active Orders</p>
-                <p className="text-3xl font-bold text-card-foreground">28</p>
+                <p className="text-3xl font-bold text-card-foreground">{activeOrdersCount}</p>
               </div>
               <Package className="h-8 w-8 text-success" />
             </div>
@@ -119,7 +256,7 @@ const ManufacturerDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Revenue (Month)</p>
-                <p className="text-3xl font-bold text-card-foreground">₹125L</p>
+                <p className="text-3xl font-bold text-card-foreground">{revenueMonth}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-accent" />
             </div>
@@ -128,7 +265,7 @@ const ManufacturerDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Clients</p>
-                <p className="text-3xl font-bold text-card-foreground">156</p>
+                <p className="text-3xl font-bold text-card-foreground">{totalClients}</p>
               </div>
               <Users className="h-8 w-8 text-primary" />
             </div>
@@ -144,7 +281,7 @@ const ManufacturerDashboard = () => {
 
           {/* Enquiries Tab */}
           <TabsContent value="enquiries" className="space-y-4">
-            {mockEnquiries.map((enquiry) => (
+            {enquiries.map((enquiry) => (
               <Card key={enquiry.id} className="p-6">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="flex-1">
@@ -179,7 +316,7 @@ const ManufacturerDashboard = () => {
               </p>
             </Card>
             
-            {mockInventory.map((item, index) => (
+            {inventory.map((item, index) => (
               <Card key={index} className="p-6">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="flex-1">
@@ -223,7 +360,7 @@ const ManufacturerDashboard = () => {
               </p>
             </Card>
             
-            {mockClients.map((client, index) => (
+            {topClients.map((client, index) => (
               <Card key={index} className="p-6">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="flex-1">

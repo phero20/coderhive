@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
+import { getStoredUser } from "@/lib/auth";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -28,31 +30,48 @@ import {
   Send,
   ChevronDown,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { useToast } from "../components/ui/use-toast";
 
-const ResellerDashboard = () => {
+function ResellerDashboard() {
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const [user, setUser] = useState(getStoredUser());
+  const [authLoading, setAuthLoading] = useState(false);
   const [projectType, setProjectType] = useState("");
   const [quantity, setQuantity] = useState("");
-  const [materialsOpen, setMaterialsOpen] = useState(false);
-  const [selectedMaterials, setSelectedMaterials] = useState([]);
-  const [user, setUser] = useState(null);
   const [address, setAddress] = useState("");
+  const [selectedMaterials, setSelectedMaterials] = useState([]);
+  const [materialsOpen, setMaterialsOpen] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [candidates, setCandidates] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("user");
-      if (stored) setUser(JSON.parse(stored));
-    } catch {}
+    // ProtectedRoute already verified authentication and role
+    const currentUser = getStoredUser();
+    if (currentUser) {
+      console.log('[Resellers] User authenticated:', currentUser.email);
+      setUser(currentUser);
+    }
   }, []);
+
 
   const projectTypes = [
     { value: "house", label: "House Construction" },
     { value: "bridge", label: "Bridge" },
     { value: "road", label: "Road" },
   ];
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading reseller dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   const materialsOptions = [
     "Cement",
@@ -98,10 +117,6 @@ const ResellerDashboard = () => {
     },
   ];
 
-  const [candidates, setCandidates] = useState([]);
-  const [summary, setSummary] = useState("");
-  const [loading, setLoading] = useState(false);
-
   const handleGenerateQuotation = async () => {
     try {
       setLoading(true);
@@ -124,10 +139,16 @@ const ResellerDashboard = () => {
         description: "Smart quotations are ready for review",
         variant: "success",
       });
+      // Clear form inputs after successful generation
+      setProjectType("");
+      setQuantity("");
+      setAddress("");
+      setSelectedMaterials([]);
+      setMaterialsOpen(false);
     } catch (e) {
       toast({
         title: "Failed to generate",
-        description: "Please ensure the backend is running on :8000",
+        description: "Please ensure the backend is running on :8012",
         variant: "destructive",
       });
     } finally {

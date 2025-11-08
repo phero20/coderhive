@@ -1,5 +1,5 @@
 import { useState } from "react";
-import axios from "axios";
+import { supabase } from "@/lib/supabase";
 import {
   Container,
   Paper,
@@ -15,7 +15,6 @@ import {
   MenuItem,
 } from "@mui/material";
 
-const API_URL = "http://localhost:5000/api";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -44,46 +43,109 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      const endpoint = isLogin ? "/auth/login" : "/auth/register";
+      if (isLogin) {
+        // Login with Supabase
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
 
-      console.log(
-        "Sending request to:",
-        API_URL + endpoint,
-        "with data:",
-        formData
-      );
+        if (error) throw error;
 
-      const { data } = await axios.post(API_URL + endpoint, formData, {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+        // Save session info
+        localStorage.setItem("supabase_session", JSON.stringify(data.session));
+        localStorage.setItem("access_token", data.session.access_token);
+        
+        // Get user profile from our users table
+        const { data: userProfile, error: profileError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', formData.email)
+          .single();
 
-      console.log("Response:", data);
+        if (profileError) {
+          console.warn('No user profile found, creating one...');
+          // Create user profile if it doesn't exist
+          const { data: newProfile, error: createError } = await supabase
+            .from('users')
+            .insert([{
+              name: data.user.user_metadata?.name || data.user.email.split('@')[0],
+              email: data.user.email,
+              role: 'reseller',
+              password_hash: 'supabase_managed',
+            }])
+            .select()
+            .single();
 
-      // Store token and user data in localStorage
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+          if (createError) throw createError;
+          localStorage.setItem("user", JSON.stringify(newProfile));
+          console.log('[Auth] User profile created and stored:', newProfile.email, 'Role:', newProfile.role);
+          // Dispatch custom event to notify other components
+          window.dispatchEvent(new CustomEvent('userLogin', { detail: newProfile }));
+        } else {
+          localStorage.setItem("user", JSON.stringify(userProfile));
+          console.log('[Auth] User profile stored:', userProfile.email, 'Role:', userProfile.role);
+          // Dispatch custom event to notify other components
+          window.dispatchEvent(new CustomEvent('userLogin', { detail: userProfile }));
+        }
 
-      setSuccess(isLogin ? "Login successful!" : "Registration successful!");
+        setSuccess("Login successful!");
+      } else {
+        // Register with Supabase
+        const { data, error } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              name: formData.name,
+              role: formData.role,
+            }
+          }
+        });
+
+        if (error) throw error;
+
+        // Save session info if user is confirmed
+        if (data.session) {
+          localStorage.setItem("supabase_session", JSON.stringify(data.session));
+          localStorage.setItem("access_token", data.session.access_token);
+        }
+        
+        // Create user profile in our users table
+        const { data: userProfile, error: profileError } = await supabase
+          .from('users')
+          .insert([{
+            name: formData.name,
+            email: formData.email,
+            role: formData.role,
+            password_hash: 'supabase_managed',
+          }])
+          .select()
+          .single();
+
+        if (profileError) throw profileError;
+
+        localStorage.setItem("user", JSON.stringify(userProfile));
+        console.log('[Auth] Registration complete:', userProfile.email, 'Role:', userProfile.role);
+        // Dispatch custom event to notify other components
+        window.dispatchEvent(new CustomEvent('userLogin', { detail: userProfile }));
+        setSuccess("Registration successful! Please check your email to verify your account.");
+      }
 
       // Clear form
-      setFormData({ name: "", email: "", password: "" });
+      setFormData({ name: "", email: "", password: "", role: "reseller" });
 
       // Show success message briefly before redirect
       setTimeout(() => {
         window.location.href = "/"; // Use full page refresh to ensure Navbar re-reads localStorage
-      }, 1000);
+      }, 1500);
     } catch (err) {
       console.error("Auth error:", err);
-      if (err.response) {
-        // Server responded with an error
-        setError(err.response.data.message || "Server error occurred");
-      } else if (err.request) {
-        // Request was made but no response received
-        setError("Cannot connect to server. Please try again later.");
+      if (err.message) {
+        // Supabase error
+        setError(err.message);
       } else {
-        // Error in request setup
+        // Generic error
         setError("An error occurred. Please try again.");
       }
     } finally {
