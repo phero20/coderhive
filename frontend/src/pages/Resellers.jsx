@@ -114,7 +114,7 @@ const ResellerDashboard = () => {
         quantity: quantity || "",
       };
       const res = await axios.post(
-        "http://localhost:8000/v1/smart-quote/prepare-simple",
+        "http://localhost:8012/v1/smart-quote/prepare-simple",
         payload
       );
       setSummary(res.data.summary || "");

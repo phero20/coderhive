@@ -14,7 +14,7 @@ from .config import get_settings
 from .routing import route_distance_eta
 from .costing import material_cost, freight_cost, tax_gst, demo_price_lookup
 from .ranking import Candidate, rank_candidates
-from .llm import summarize_with_gemini
+from .llm import summarize_with_llm
 from .invoice import render_invoice
 
 router = APIRouter()
@@ -35,10 +35,14 @@ def health():
 @router.get("/health/ai")
 def health_ai():
     try:
-        has_key = bool(get_settings().gemini_api_key)
-        return {"ai_key_present": has_key}
+        s = get_settings()
+        return {
+            "ai_key_present": bool(s.groq_api_key or s.gemini_api_key),
+            "groq": bool(s.groq_api_key),
+            "gemini": bool(s.gemini_api_key),
+        }
     except Exception:
-        return {"ai_key_present": False}
+        return {"ai_key_present": False, "groq": False, "gemini": False}
 
 def compute_candidates(req: PrepareRequest):
     settings = get_settings()
@@ -89,15 +93,15 @@ def compute_candidates(req: PrepareRequest):
 
 def compute_prepare(req: PrepareRequest) -> PrepareResponse:
     top, candidates_json = compute_candidates(req)
-    summary = summarize_with_gemini(req.project.brief, req.project.site_name, candidates_json)
-    if not summary or summary.startswith("SmartQuotation (fallback)") or summary.startswith("Gemini API call failed"):
+    summary = summarize_with_llm(req.project.brief, req.project.site_name, candidates_json)
+    if (not summary) or summary.startswith("SmartQuotation (fallback)") or ("API call failed" in summary):
         summary = ""
     # Console log for verification of AI summary vs computed
     try:
         if summary:
             print("[AI SUMMARY]", summary)
         else:
-            print("[AI SUMMARY] (empty) -> Computed mode (no Gemini)")
+            print("[AI SUMMARY] (empty) -> Computed mode (no LLM)")
     except Exception:
         pass
     return {"summary": summary, "candidates": top}
@@ -252,8 +256,8 @@ def prepare_ai(req: SimplePrepareRequest):
     prep = PrepareRequest(project=project, items=items)
 
     top, candidates_json = compute_candidates(prep)
-    summary = summarize_with_gemini(project.brief, project.site_name, candidates_json)
-    if not summary or summary.startswith("SmartQuotation (fallback)") or summary.startswith("Gemini API call failed"):
+    summary = summarize_with_llm(project.brief, project.site_name, candidates_json)
+    if (not summary) or summary.startswith("SmartQuotation (fallback)") or ("API call failed" in summary):
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="AI response unavailable")
     # Console log for verification of AI summary
     try:

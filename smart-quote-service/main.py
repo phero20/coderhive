@@ -33,4 +33,4 @@ def root():
 if __name__ == "__main__":
     # Run using the app instance to avoid import string issues with reloader
     # (folder has a hyphen, which isn't a valid python module name).
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

@@ -26,8 +26,55 @@ def _extract_text_from_resp(j):
             return v
     return None
 
-def summarize_with_gemini(project_brief: str, site_name: str, candidates_json: dict) -> str:
+def summarize_with_llm(project_brief: str, site_name: str, candidates_json: dict) -> str:
     settings = get_settings()
+
+    # 1) Try Groq first if available
+    groq_key = getattr(settings, 'groq_api_key', None) or os.environ.get('GROQ_API_KEY')
+    if groq_key:
+        try:
+            system = "You are SmartQuotation, a B2B procurement assistant. NEVER invent prices/ETAs; use the provided JSON."
+            user_prompt = f"""{system}
+
+Project brief:
+{project_brief}
+Site: {site_name}
+
+CANDIDATES JSON:
+{json.dumps(candidates_json, indent=2)}
+
+Tasks:
+1) Pick Best overall, Cheapest, Fastest (2–4 bullets WHY).
+2) Provide a concise table (vendor, landed_cost, ETA(min), on_time_rate, top risk).
+3) Draft RFQ text for the recommended vendor.
+4) Provide Invoice JSON fields based on chosen candidate's numeric values only.
+"""
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {groq_key}",
+                "Content-Type": "application/json",
+            }
+            body = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.7,
+            }
+            r = requests.post(url, headers=headers, json=body, timeout=25)
+            if r.status_code < 400:
+                j = r.json()
+                # OpenAI-style response shape
+                if 'choices' in j and j['choices']:
+                    msg = j['choices'][0].get('message', {})
+                    txt = msg.get('content')
+                    if txt:
+                        return txt
+        except Exception:
+            pass
+
+    # 2) Fallback to Gemini if Groq not available
     api_key = settings.gemini_api_key
     if not api_key:
         best = min(candidates_json["candidates"], key=lambda c: c["landed_cost"]*0.6 + c["eta_minutes"]*0.4)
@@ -38,7 +85,7 @@ def summarize_with_gemini(project_brief: str, site_name: str, candidates_json: d
             f"- Best overall: {best['vendor_name']} (₹{best['landed_cost']:.0f}, ETA {best['eta_minutes']} min)",
             f"- Cheapest: {cheapest['vendor_name']} (₹{cheapest['landed_cost']:.0f})",
             f"- Fastest: {fastest['vendor_name']} ({fastest['eta_minutes']} min)",
-            "Set GEMINI_API_KEY to enable rich narrative and RFQ/Invoice JSON."
+            "Set GEMINI_API_KEY or GROQ_API_KEY to enable rich narrative and RFQ/Invoice JSON."
         ]
         return "\n".join(lines)
 
@@ -91,4 +138,4 @@ Tasks:
                         return txt
                 except Exception:
                     continue
-    return "Gemini API call failed. Verify GEMINI_API_KEY and model access. Returning without LLM."
+    return "Gemini API call failed. Verify GEMINI_API_KEY or GROQ_API_KEY and model access. Returning without LLM."
