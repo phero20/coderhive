@@ -10,7 +10,6 @@ export default function App() {
     <div className="bg-[#F9FAFB] text-[#111827] font-sans">
       <Navbar />
       <Hero />
-      hello
       <Features />
       <HowItWorks />
       <CTA />

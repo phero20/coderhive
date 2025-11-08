@@ -31,16 +31,17 @@ export default function Features() {
       <h2 className="text-3xl font-bold text-center text-gray-900 mb-10">
         What Makes UrbanSupply AI Different
       </h2>
-      <div className="grid md:grid-cols-3 gap-8">
+      <div className="grid md:grid-cols-3 gap-6 md:gap-8">
         {features.map((f, i) => (
           <div
             key={i}
-            className="bg-blue-50 p-6 rounded-2xl shadow hover:shadow-md transition"
+            className="group relative overflow-hidden rounded-2xl bg-blue-50 p-6 shadow transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 focus-within:shadow-md"
           >
-            <h3 className="text-xl font-semibold text-blue-700 mb-3">
+            <h3 className="text-xl font-semibold text-blue-700 mb-2">
               {f.title}
             </h3>
             <p className="text-gray-600">{f.desc}</p>
+            <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 scale-x-0 bg-blue-600/50 transition-transform duration-300 group-hover:scale-x-100" />
           </div>
         ))}
       </div>
